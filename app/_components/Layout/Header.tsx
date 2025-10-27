@@ -8,7 +8,7 @@ export default function Header() {
       <div className="mx-auto max-w-[1100px] px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img
-            src="/next.svg"
+            src="/favicon-32x32.png"
             width={90}
             height={24}
             alt="Logo"

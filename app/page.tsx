@@ -12,27 +12,11 @@ function onlyDigits(v: string) {
 function isEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
-function isValidCPF(input: string) {
-  const cpf = onlyDigits(input);
-  if (cpf.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(cpf)) return false;
-  let sum = 0;
-  for (let i = 0; i < 9; i++) sum += parseInt(cpf[i], 10) * (10 - i);
-  let d1 = (sum * 10) % 11;
-  if (d1 === 10) d1 = 0;
-  if (d1 !== parseInt(cpf[9], 10)) return false;
-  sum = 0;
-  for (let i = 0; i < 10; i++) sum += parseInt(cpf[i], 10) * (11 - i);
-  let d2 = (sum * 10) % 11;
-  if (d2 === 10) d2 = 0;
-  return d2 === parseInt(cpf[10], 10);
-}
 
 type FormState = {
   fullName: string;
   email: string;
   phone: string;
-  cpf: string;
   company: string;
   jobTitle: string;
   acceptTerms: boolean;
@@ -42,7 +26,6 @@ const initialState: FormState = {
   fullName: "",
   email: "",
   phone: "",
-  cpf: "",
   company: "",
   jobTitle: "",
   acceptTerms: false,
@@ -68,9 +51,6 @@ export default function Page() {
     }
     if (phoneDigits.length < 10 || phoneDigits.length > 11) {
       e.phone = "Informe um telefone válido";
-    }
-    if (!isValidCPF(values.cpf)) {
-      e.cpf = "CPF inválido (use 11 dígitos, ex.: 123.456.789-09)";
     }
     if (!values.company.trim()) {
       e.company = "Informe a empresa";
@@ -99,7 +79,6 @@ export default function Page() {
         fullName: values.fullName.trim(),
         email: values.email.trim().toLowerCase(),
         phone: phoneDigits,
-        documentNumber: onlyDigits(values.cpf),
         company: values.company,
         jobTitle: values.jobTitle,
       } as const;
@@ -113,15 +92,12 @@ export default function Page() {
 
       if (res.ok && json?.ok) {
         if (json?.alreadyRegistered) {
-          // Caso: usuário já estava cadastrado
           setAlreadyRegistered(true);
           setServerMsg(
             json?.message ||
               "Você já está cadastrado e fará parte do nosso evento."
           );
-          // Não abre overlay nem limpa o formulário
         } else {
-          // Caso: novo cadastro criado
           setSuccess(true);
           setServerMsg(json?.message || "Inscrição enviada com sucesso! ✔");
           setValues(initialState);
@@ -187,7 +163,7 @@ export default function Page() {
           </p>
         </div>
 
-        {/* Marca d’água (fica dentro do card) */}
+        {/* Marca d’água */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
             className="w-[90%] h-[90%] bg-center bg-no-repeat bg-contain opacity-10"
@@ -246,8 +222,8 @@ export default function Page() {
             )}
           </div>
 
-          {/* Telefone */}
-          <div>
+          {/* Telefone — ocupa a linha inteira no desktop para forçar a próxima linha com Empresa + Cargo */}
+          <div className="md:col-span-2">
             <label
               htmlFor="phone"
               className="block text-sm font-medium text-black"
@@ -270,30 +246,7 @@ export default function Page() {
             )}
           </div>
 
-          {/* CPF */}
-          {/* <div className="md:col-span-2">
-            <label
-              htmlFor="cpf"
-              className="block text-sm font-medium text-black"
-            >
-              CPF <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="cpf"
-              required
-              type="text"
-              value={values.cpf}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, cpf: e.target.value }))
-              }
-              className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
-            />
-            {errors.cpf && (
-              <p className="mt-1 text-sm text-red-500">{errors.cpf}</p>
-            )}
-          </div> */}
-
-          {/* Empresa */}
+          {/* Empresa — col 1 no desktop */}
           <div>
             <label
               htmlFor="company"
@@ -316,7 +269,7 @@ export default function Page() {
             )}
           </div>
 
-          {/* Cargo */}
+          {/* Cargo — col 2 no desktop */}
           <div>
             <label
               htmlFor="jobTitle"
