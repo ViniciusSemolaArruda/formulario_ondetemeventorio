@@ -271,7 +271,7 @@ export default function Page() {
           </div>
 
           {/* CPF */}
-          <div className="md:col-span-2">
+          {/* <div className="md:col-span-2">
             <label
               htmlFor="cpf"
               className="block text-sm font-medium text-black"
@@ -291,7 +291,7 @@ export default function Page() {
             {errors.cpf && (
               <p className="mt-1 text-sm text-red-500">{errors.cpf}</p>
             )}
-          </div>
+          </div> */}
 
           {/* Empresa */}
           <div>
