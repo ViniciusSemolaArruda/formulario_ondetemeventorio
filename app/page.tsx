@@ -147,7 +147,7 @@ export default function Page() {
           <div className="relative z-10 max-w-md w-full rounded-2xl border-2 bg-white text-green-700 shadow-2xl p-6 text-center">
             <h2 className="text-xl font-bold">Inscrição enviada com sucesso! 🎉</h2>
             <p className="mt-2 text-green-800">
-              Obrigado por se inscrever. Em breve entraremos em contato com as próximas etapas.
+              Obrigado por se inscrever! Em breve entraremos em contato com as próximas etapas.
             </p>
             <button
               onClick={() => setSuccess(false)}
