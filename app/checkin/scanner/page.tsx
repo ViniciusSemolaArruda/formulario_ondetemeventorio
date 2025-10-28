@@ -13,6 +13,22 @@ type ScanStatus =
   | "invalid"
   | "error";
 
+type CheckinResponse = {
+  ok?: boolean;
+  message?: string;
+  fullName?: string;
+  company?: string | null;
+  jobTitle?: string | null;
+  alreadyChecked?: boolean;
+};
+
+type ResultData = {
+  fullName?: string;
+  company?: string | null;
+  jobTitle?: string | null;
+  alreadyChecked?: boolean;
+};
+
 export default function ScannerPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -32,11 +48,17 @@ export default function ScannerPage() {
   // entrada manual
   const [manualToken, setManualToken] = useState("");
 
+  // resultado exibido após leitura
+  const [result, setResult] = useState<ResultData | null>(null);
+
   // --------------------------------------------------
   // utilidades
   const beep = () => {
     try {
-      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const Ctx =
+        (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
       const ctx = new Ctx();
       const o = ctx.createOscillator();
       const g = ctx.createGain();
@@ -63,9 +85,11 @@ export default function ScannerPage() {
       const stream = videoRef.current?.srcObject as MediaStream | null;
       if (!stream) return;
       const track = stream.getVideoTracks()[0];
-      const caps = (track.getCapabilities?.() ?? {}) as any;
+      
+      const caps = track.getCapabilities?.() ?? {};
       if (!("torch" in caps)) return;
-      await (track as any).applyConstraints({ advanced: [{ torch: enable }] });
+      // @ts-expect-error older types
+      await track.applyConstraints({ advanced: [{ torch: enable }] });
       setTorchOn(enable);
     } catch {
       // sem suporte: ignorar
@@ -84,21 +108,25 @@ export default function ScannerPage() {
   // listagem de câmeras (pede permissão antes para liberar labels)
   async function requestPermissionAndList() {
     try {
-      setStatus("scanning");
-      const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      if (status === "idle") setStatus("scanning");
+      const tmp = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
       setHasPermission(true);
       tmp.getTracks().forEach((t) => t.stop());
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const e = err as { name?: string };
       setHasPermission(false);
-      if (err?.name === "NotAllowedError") {
+      if (e?.name === "NotAllowedError") {
         setStatus("error");
         setLastMessage("Permita o acesso à câmera e recarregue a página.");
-        return;
+        return "";
       }
-      if (err?.name === "NotFoundError") {
+      if (e?.name === "NotFoundError") {
         setStatus("error");
         setLastMessage("Nenhuma câmera encontrada no dispositivo.");
-        return;
+        return "";
       }
       // segue: pode haver devices mesmo sem stream concedida
     }
@@ -112,7 +140,7 @@ export default function ScannerPage() {
       list[0]?.deviceId ??
       "";
 
-    setSelectedId((prev) => prev || back);
+    if (!selectedId) setSelectedId(back);
     return back;
   }
 
@@ -122,6 +150,8 @@ export default function ScannerPage() {
     stopCurrent();
     setStatus("scanning");
     setLastMessage("");
+    setResult(null);
+    setTorchOn(false);
 
     try {
       const reader = new BrowserQRCodeReader(undefined, {
@@ -129,8 +159,14 @@ export default function ScannerPage() {
       });
 
       const onResult = async (text: string, controls: IScannerControls) => {
+        // garante leitura única por ciclo
+        if (busy || status !== "scanning") return;
+        setBusy(true);
         controlsRef.current = controls;
-        if (!text || busy) return;
+
+        // congela imediatamente: para leitor e câmera
+        stopCurrent();
+
         let token = "";
         try {
           const u = new URL(text);
@@ -142,17 +178,23 @@ export default function ScannerPage() {
           setStatus("invalid");
           setLastMessage("QR inválido: token ausente.");
           vibrate(140);
+          setBusy(false);
           return;
         }
-        setBusy(true);
+
         await handleCheckin(token);
         setBusy(false);
+        // NÃO auto-reseta. Fica parado até clicar em Reset.
       };
 
       if (deviceId) {
-        await reader.decodeFromVideoDevice(deviceId, videoRef.current!, async (res, _err, c) => {
-          if (res) await onResult(res.getText(), c);
-        });
+        await reader.decodeFromVideoDevice(
+          deviceId,
+          videoRef.current!,
+          async (res, _err, c) => {
+            if (res) await onResult(res.getText(), c);
+          }
+        );
       } else {
         // fallback por facingMode (quando deviceId não existe/funciona)
         await reader.decodeFromConstraints(
@@ -170,10 +212,13 @@ export default function ScannerPage() {
           }
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const e = err as { name?: string };
       setStatus("error");
-      if (err?.name === "NotReadableError") {
-        setLastMessage("A câmera está em uso por outro app. Feche-o e tente novamente.");
+      if (e?.name === "NotReadableError") {
+        setLastMessage(
+          "A câmera está em uso por outro app. Feche-o e tente novamente."
+        );
       } else {
         setLastMessage("Não foi possível iniciar a câmera.");
       }
@@ -197,11 +242,13 @@ export default function ScannerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // trocar de câmera pelo seletor
+  // trocar de câmera pelo seletor (só se estiver escaneando)
   useEffect(() => {
     if (!selectedId) return;
-    startReader(selectedId);
-    setTorchOn(false); // reseta estado visual da lanterna após troca
+    if (status === "scanning") {
+      startReader(selectedId);
+      setTorchOn(false); // reseta estado visual da lanterna após troca
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -210,40 +257,50 @@ export default function ScannerPage() {
   async function handleCheckin(token: string) {
     try {
       const res = await fetch(`/api/checkin?t=${encodeURIComponent(token)}`);
-      const json = await res.json();
+      const json: CheckinResponse = await res.json();
 
       if (!res.ok || !json?.ok) {
         if (json?.message?.toLowerCase().includes("revog")) {
           setStatus("revoked");
           setLastMessage("Convite revogado.");
+          setResult(null);
           vibrate(200);
           return;
         }
         setStatus("invalid");
         setLastMessage(json?.message || "QR inválido.");
+        setResult(null);
         vibrate(160);
         return;
       }
 
+      const payload: ResultData = {
+        fullName: json.fullName,
+        company: json.company ?? null,
+        jobTitle: json.jobTitle ?? null,
+        alreadyChecked: json.alreadyChecked,
+      };
+
       if (json.alreadyChecked) {
         setStatus("already");
         setLastMessage(`Já tinha check-in: ${json.fullName ?? ""}`);
+        setResult(payload);
         vibrate(80);
         beep();
       } else {
         setStatus("success");
         setLastMessage(`Check-in ok: ${json.fullName ?? ""}`);
+        setResult(payload);
         vibrate(80);
         beep();
       }
 
-      setTimeout(() => {
-        setStatus("scanning");
-        setLastMessage("");
-      }, 2500);
+      // IMPORTANTE: não voltamos para "scanning" automaticamente.
+      // O operador deve clicar em "Reset" para ler de novo.
     } catch {
       setStatus("error");
       setLastMessage("Erro de rede. Tente novamente.");
+      setResult(null);
       vibrate(160);
     }
   }
@@ -258,11 +315,14 @@ export default function ScannerPage() {
     error: "bg-gray-100 text-gray-800 border-gray-300",
   };
 
+  const isFrozen = status !== "scanning"; // quando não está escaneando, a UI fica “congelada”
+
   return (
     <main className="min-h-screen w-full flex flex-col items-center gap-4 p-4 bg-white">
       <h1 className="text-2xl font-bold">Leitor de Convites (QR)</h1>
       <p className="text-sm text-gray-600 text-center">
         Aponte a câmera para o QR do convidado. O sistema valida e marca o check-in automaticamente.
+        Após uma leitura, o leitor pausa. Clique em <strong>Reset</strong> para ler novamente.
       </p>
 
       {/* Seletor de câmera */}
@@ -271,6 +331,7 @@ export default function ScannerPage() {
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
           className="flex-1 rounded-lg border px-3 py-2 bg-white"
+          disabled={status !== "scanning"} // impede troca enquanto congelado
         >
           {devices.length === 0 && (
             <option value="">
@@ -289,14 +350,21 @@ export default function ScannerPage() {
         <button
           type="button"
           onClick={async () => {
-            // re-lista e tenta manter a seleção anterior se ainda existir
             const prev = selectedId;
-            await requestPermissionAndList();
-            // se a anterior existir ainda, mantém
-            const stillThere = devices.find((d) => d.deviceId === prev);
-            setSelectedId(stillThere ? prev : (d => d?.deviceId ?? "")(devices[0]));
+            const back = await requestPermissionAndList();
+            // Tenta manter a anterior; se não existir mais, usa a primeira da nova lista
+            const updated = await BrowserQRCodeReader.listVideoInputDevices();
+            setDevices(updated);
+            const stillThere = updated.find((d) => d.deviceId === prev);
+            const nextId = stillThere?.deviceId ?? updated[0]?.deviceId ?? back ?? "";
+            setSelectedId(nextId);
+            // só reinicia se estiver escaneando
+            if (status === "scanning" && nextId) {
+              startReader(nextId);
+            }
           }}
-          className="px-4 py-2 rounded-lg bg-gray-800 text-white font-medium shadow"
+          className="px-4 py-2 rounded-lg bg-gray-800 text-white font-medium shadow disabled:opacity-60"
+          disabled={status !== "scanning"}
         >
           Atualizar
         </button>
@@ -304,14 +372,28 @@ export default function ScannerPage() {
 
       {/* Área do vídeo */}
       <div className="w-full max-w-md rounded-xl overflow-hidden border bg-black aspect-[3/4] relative">
-        <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
+        <video
+          ref={videoRef}
+          className={`w-full h-full object-cover ${isFrozen ? "opacity-70" : "opacity-100"}`}
+          muted
+          playsInline
+          autoPlay
+        />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="w-56 h-56 border-2 border-white/80 rounded-lg" />
+          {status === "scanning" ? (
+            <div className="w-56 h-56 border-2 border-white/80 rounded-lg" />
+          ) : (
+            <div className="px-3 py-1 rounded-md bg-black/60 text-white text-xs">
+              Leitura pausada — clique em Reset para ler novamente
+            </div>
+          )}
         </div>
       </div>
 
       {/* Status */}
-      <div className={`w-full max-w-md rounded-lg border p-3 text-center ${statusStyles[status]}`}>
+      <div
+        className={`w-full max-w-md rounded-lg border p-3 text-center ${statusStyles[status]}`}
+      >
         {status === "scanning" && "Lendo… aponte para o QR"}
         {status === "success" && (lastMessage || "Check-in confirmado!")}
         {status === "already" && (lastMessage || "Convidado já tinha check-in.")}
@@ -321,13 +403,36 @@ export default function ScannerPage() {
         {status === "idle" && "Pronto para começar."}
       </div>
 
+      {/* Detalhes do convidado (nome, empresa, cargo) */}
+      {(status === "success" || status === "already") && result && (
+        <div className="w-full max-w-md rounded-lg border p-4 bg-white">
+          <h2 className="font-semibold text-lg mb-1">
+            {result.fullName || "Convidado"}
+          </h2>
+          <p className="text-sm text-gray-700">
+            <span className="font-medium">Empresa:</span>{" "}
+            {result.company?.trim() ? result.company : "—"}
+          </p>
+          <p className="text-sm text-gray-700">
+            <span className="font-medium">Cargo:</span>{" "}
+            {result.jobTitle?.trim() ? result.jobTitle : "—"}
+          </p>
+          {result.alreadyChecked && (
+            <p className="mt-2 text-xs text-amber-700">
+              Observação: este convidado já havia realizado o check-in.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Controles */}
       <div className="w-full max-w-md flex items-center gap-3">
         <button
           type="button"
           onClick={() => toggleTorch(!torchOn)}
-          className="px-4 py-2 rounded-lg text-white font-medium shadow"
+          className="px-4 py-2 rounded-lg text-white font-medium shadow disabled:opacity-60"
           style={{ backgroundColor: torchOn ? "#f59e0b" : "#111827" }}
+          disabled={status !== "scanning"} // lanterna só faz sentido quando a câmera está ativa
         >
           {torchOn ? "Lanterna: ON" : "Lanterna: OFF"}
         </button>
@@ -335,8 +440,8 @@ export default function ScannerPage() {
         <button
           type="button"
           onClick={() => {
-            setStatus("scanning");
-            setLastMessage("");
+            // Reinicia o leitor explicitamente
+            startReader(selectedId || undefined);
           }}
           className="px-4 py-2 rounded-lg bg-gray-800 text-white font-medium shadow"
         >
@@ -357,6 +462,12 @@ export default function ScannerPage() {
           type="button"
           disabled={busy || !manualToken.trim()}
           onClick={async () => {
+            if (busy) return;
+            setBusy(true);
+
+            // “Congela” o leitor ao validar manualmente:
+            stopCurrent();
+
             let t = manualToken.trim();
             try {
               const u = new URL(t);
@@ -365,11 +476,14 @@ export default function ScannerPage() {
             if (!t) {
               setStatus("invalid");
               setLastMessage("Token ausente.");
+              setResult(null);
+              setBusy(false);
               return;
             }
-            setBusy(true);
+
             await handleCheckin(t);
             setBusy(false);
+            // Não auto-reseta; operador deve clicar em Reset.
           }}
           className="px-4 py-2 rounded-lg bg-orange-600 text-white font-medium shadow disabled:opacity-60"
         >
@@ -378,7 +492,7 @@ export default function ScannerPage() {
       </div>
 
       <p className="text-xs text-gray-500 mt-4 text-center">
-        Dica: toque no cadeado da barra de endereço &rarr; Permissões &rarr; Câmera = Permitir.
+        Dica: toque no cadeado da barra de endereço → Permissões → Câmera = Permitir.
         Se a câmera não abrir, feche apps que a estejam usando (WhatsApp/Instagram) e recarregue.
       </p>
     </main>
