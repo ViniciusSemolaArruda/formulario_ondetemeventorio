@@ -1,3 +1,4 @@
+//app\checkin\scanner\page.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -49,7 +50,7 @@ export default function ScannerPage() {
       const track = stream.getVideoTracks()[0];
       const capabilities = (track.getCapabilities?.() ?? {}) as any;
       if (!("torch" in capabilities)) return;
-      await track.applyConstraints({ advanced: [{ torch: enable }] });
+      await (track as any).applyConstraints({ advanced: [{ torch: enable }] });
       setTorchOn(enable);
     } catch {
       // ignora se não suportado
