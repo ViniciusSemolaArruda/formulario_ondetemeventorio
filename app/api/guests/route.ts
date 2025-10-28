@@ -11,7 +11,8 @@ import QRCode from "qrcode";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
-const APP_BASE_URL = process.env.APP_BASE_URL ?? "http://localhost:3000";
+const RAW_BASE = process.env.APP_BASE_URL ?? "https://convidado-ondetemevento.com.br";
+const APP_BASE_URL = RAW_BASE.replace(/\/+$/, ""); // remove barra no final
 const MAIL_FROM = process.env.MAIL_FROM ?? "Convites <onboarding@resend.dev>";
 const SEND_EMAILS = process.env.SEND_EMAILS ?? "true";
 

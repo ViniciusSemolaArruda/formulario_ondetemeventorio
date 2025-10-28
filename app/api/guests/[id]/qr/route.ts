@@ -1,15 +1,21 @@
 // app/api/guests/[id]/qr/route.ts
-export const runtime = "nodejs"; // garante Node APIs
+export const runtime = "nodejs";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import QRCode from "qrcode";
 
-const APP_BASE_URL = process.env.APP_BASE_URL ?? "https://convidado-ondetemevento.com.br/";
+const RAW_BASE = process.env.APP_BASE_URL ?? "https://convidado-ondetemevento.com.br";
+const APP_BASE_URL = RAW_BASE.replace(/\/+$/, "");
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> } // Next 15: params é Promise
+) {
+  const { id } = await params;
+
   const guest = await prisma.guestInvite.findUnique({
-    where: { id: params.id },
+    where: { id },
     select: { checkInToken: true },
   });
 
@@ -19,15 +25,15 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const payloadUrl = `${APP_BASE_URL}/api/checkin?t=${guest.checkInToken}`;
 
-  // qrcode retorna Buffer (Node). Convertemos para Uint8Array (BodyInit válido no runtime web)
   const pngBuffer = await QRCode.toBuffer(payloadUrl, {
     width: 600,
     margin: 1,
     errorCorrectionLevel: "M",
   });
-  const pngUint8 = new Uint8Array(pngBuffer); // <- conversão que resolve o erro de tipo
 
-  return new Response(pngUint8, {
+  const body = new Uint8Array(pngBuffer); // 👈 resolve o erro do BodyInit
+
+  return new Response(body, {
     headers: {
       "Content-Type": "image/png",
       "Cache-Control": "private, no-store",

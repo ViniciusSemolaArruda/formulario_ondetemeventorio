@@ -1,10 +1,13 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // precisa da extensão se usar @db.Citext
+  extensions = [citext()]
 }
 
 enum DocumentType {
@@ -20,29 +23,35 @@ enum InviteStatus {
 
 model GuestInvite {
   id             String        @id @default(uuid())
+
   fullName       String        @db.VarChar(120)
-  email          String        @db.Citext
-  phone          String        @db.VarChar(14)
+
+  // únicos individuais para idempotência real
+  email          String        @db.Citext @unique
+  phone          String        @db.VarChar(14) @unique
+
   documentType   DocumentType?
   documentNumber String?       @db.VarChar(14)
+
   company        String?       @db.VarChar(120)
   jobTitle       String?       @db.VarChar(120)
 
-  // 1ª etapa: opcional e sem unique
-  checkInToken   String?       @db.VarChar(64)
+  // token único para facilitar /api/checkin?t=...
+  checkInToken   String?       @db.VarChar(64) @unique
   status         InviteStatus  @default(PENDING)
   checkInAt      DateTime?
 
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  state          String?       @db.VarChar(2)    // UF (ex: RJ)
-  city           String?       @db.VarChar(120)  // Município
+  state          String?       @db.VarChar(2)
+  city           String?       @db.VarChar(120)
 
-  @@unique([email, phone])
-  @@index([email])
-  @@index([phone])
+  // índices úteis
   @@index([createdAt])
   @@index([status])
   @@index([state, city])
+
+  
+  @@unique([documentType, documentNumber])
 }
