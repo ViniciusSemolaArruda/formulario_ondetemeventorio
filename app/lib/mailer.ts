@@ -1,3 +1,4 @@
+//app\lib\mailer.ts
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -20,7 +21,8 @@ export async function sendInviteEmail({ to, name, passUrl, qrBase64Png }: SendIn
     <p><strong>Dica:</strong> Salve este e-mail ou baixe a imagem.</p>
     <p style="text-align:center">
       <img alt="Seu QR Code" style="width:260px;height:auto"
-           src="data:image/png;base64,${qrBase64Png}" />
+     src="${passUrl.replace('/pass', '/qr')}" />
+
     </p>
     <p>Se preferir, abra seu passe aqui:<br/>
       <a href="${passUrl}" target="_blank">${passUrl}</a>
