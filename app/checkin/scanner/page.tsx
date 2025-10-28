@@ -1,4 +1,4 @@
-//app\checkin\scanner\page.tsx
+// app/checkin/scanner/page.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -16,121 +16,203 @@ type ScanStatus =
 export default function ScannerPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+
   const [status, setStatus] = useState<ScanStatus>("idle");
-  const [lastMessage, setLastMessage] = useState<string>("");
-  const [torchOn, setTorchOn] = useState(false);
-  const [manualToken, setManualToken] = useState("");
+  const [lastMessage, setLastMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // pequeno beep
+  // câmera / devices
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedId, setSelectedId] = useState<string | "">("");
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  // lanterna
+  const [torchOn, setTorchOn] = useState(false);
+
+  // entrada manual
+  const [manualToken, setManualToken] = useState("");
+
+  // --------------------------------------------------
+  // utilidades
   const beep = () => {
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new Ctx();
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.type = "sine";
-      o.frequency.value = 880; // A5
+      o.frequency.value = 880;
       o.connect(g);
       g.connect(ctx.destination);
-      g.gain.value = 0.05;
+      g.gain.value = 0.06;
       o.start();
-      setTimeout(() => { o.stop(); ctx.close(); }, 120);
+      setTimeout(() => {
+        o.stop();
+        ctx.close();
+      }, 120);
+    } catch {}
+  };
+  const vibrate = (ms = 80) => {
+    try {
+      navigator.vibrate?.(ms);
     } catch {}
   };
 
-  const vibrate = (ms = 80) => {
-    try { navigator.vibrate?.(ms); } catch {}
-  };
-
-  // Ativa/desativa lanterna se suportado
   async function toggleTorch(enable: boolean) {
     try {
       const stream = videoRef.current?.srcObject as MediaStream | null;
       if (!stream) return;
       const track = stream.getVideoTracks()[0];
-      const capabilities = (track.getCapabilities?.() ?? {}) as any;
-      if (!("torch" in capabilities)) return;
+      const caps = (track.getCapabilities?.() ?? {}) as any;
+      if (!("torch" in caps)) return;
       await (track as any).applyConstraints({ advanced: [{ torch: enable }] });
       setTorchOn(enable);
     } catch {
-      // ignora se não suportado
+      // sem suporte: ignorar
     }
   }
 
-  // Inicia leitor
-  useEffect(() => {
-    const start = async () => {
+  function stopCurrent() {
+    controlsRef.current?.stop();
+    controlsRef.current = null;
+    toggleTorch(false).catch(() => {});
+    const stream = videoRef.current?.srcObject as MediaStream | null;
+    stream?.getTracks().forEach((t) => t.stop());
+  }
+
+  // --------------------------------------------------
+  // listagem de câmeras (pede permissão antes para liberar labels)
+  async function requestPermissionAndList() {
+    try {
       setStatus("scanning");
-
-      const codeReader = new BrowserQRCodeReader(undefined, {
-        delayBetweenScanAttempts: 200, // ms
-      });
-
-      // Preferir câmera traseira
-      const devices = await BrowserQRCodeReader.listVideoInputDevices();
-      const backCam =
-        devices.find((d) => /back|traseira|rear|environment/i.test(d.label))?.deviceId ||
-        devices[0]?.deviceId;
-
-      if (!videoRef.current || !backCam) {
+      const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      setHasPermission(true);
+      tmp.getTracks().forEach((t) => t.stop());
+    } catch (err: any) {
+      setHasPermission(false);
+      if (err?.name === "NotAllowedError") {
         setStatus("error");
-        setLastMessage("Câmera não encontrada.");
+        setLastMessage("Permita o acesso à câmera e recarregue a página.");
         return;
       }
+      if (err?.name === "NotFoundError") {
+        setStatus("error");
+        setLastMessage("Nenhuma câmera encontrada no dispositivo.");
+        return;
+      }
+      // segue: pode haver devices mesmo sem stream concedida
+    }
 
-      const controls = await codeReader.decodeFromVideoDevice(
-        backCam,
-        videoRef.current,
-        async (result, _err, _controls) => {
-          // quando lê um QR válido (evita disparos múltiplos simultâneos)
-          if (result && !busy) {
-            const text = result.getText();
-            // Suporta tanto URL completa (…/api/checkin?t=XYZ) quanto apenas o token
-            let token = "";
-            try {
-              const u = new URL(text);
-              token = u.searchParams.get("t") || "";
-            } catch {
-              token = text;
-            }
-            if (!token) {
-              setStatus("invalid");
-              setLastMessage("QR inválido: token ausente.");
-              vibrate(120);
-              return;
-            }
+    const list = await BrowserQRCodeReader.listVideoInputDevices();
+    setDevices(list);
 
-            setBusy(true);
-            await handleCheckin(token);
-            setBusy(false);
-          }
+    // escolher automaticamente a traseira (environment/back), senão a primeira
+    const back =
+      list.find((d) => /back|traseira|rear|environment/i.test(d.label))?.deviceId ??
+      list[0]?.deviceId ??
+      "";
+
+    setSelectedId((prev) => prev || back);
+    return back;
+  }
+
+  // --------------------------------------------------
+  // inicia leitor com deviceId ou com fallback facingMode
+  async function startReader(deviceId?: string) {
+    stopCurrent();
+    setStatus("scanning");
+    setLastMessage("");
+
+    try {
+      const reader = new BrowserQRCodeReader(undefined, {
+        delayBetweenScanAttempts: 200,
+      });
+
+      const onResult = async (text: string, controls: IScannerControls) => {
+        controlsRef.current = controls;
+        if (!text || busy) return;
+        let token = "";
+        try {
+          const u = new URL(text);
+          token = u.searchParams.get("t") || "";
+        } catch {
+          token = text;
         }
-      );
+        if (!token) {
+          setStatus("invalid");
+          setLastMessage("QR inválido: token ausente.");
+          vibrate(140);
+          return;
+        }
+        setBusy(true);
+        await handleCheckin(token);
+        setBusy(false);
+      };
 
-      controlsRef.current = controls;
-    };
+      if (deviceId) {
+        await reader.decodeFromVideoDevice(deviceId, videoRef.current!, async (res, _err, c) => {
+          if (res) await onResult(res.getText(), c);
+        });
+      } else {
+        // fallback por facingMode (quando deviceId não existe/funciona)
+        await reader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          videoRef.current!,
+          async (res, _err, c) => {
+            if (res) await onResult(res.getText(), c);
+          }
+        );
+      }
+    } catch (err: any) {
+      setStatus("error");
+      if (err?.name === "NotReadableError") {
+        setLastMessage("A câmera está em uso por outro app. Feche-o e tente novamente.");
+      } else {
+        setLastMessage("Não foi possível iniciar a câmera.");
+      }
+    }
+  }
 
-    start();
+  // --------------------------------------------------
+  // ciclo de vida: pede permissão, lista e inicia
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const back = await requestPermissionAndList();
+      if (!mounted) return;
+      await startReader(back || undefined);
+    })();
 
     return () => {
-      controlsRef.current?.stop();
-      controlsRef.current = null;
-      // desligar lanterna ao sair
-      toggleTorch(false).catch(() => {});
-      // parar tracks
-      const stream = videoRef.current?.srcObject as MediaStream | null;
-      stream?.getTracks().forEach((t) => t.stop());
+      mounted = false;
+      stopCurrent();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // trocar de câmera pelo seletor
+  useEffect(() => {
+    if (!selectedId) return;
+    startReader(selectedId);
+    setTorchOn(false); // reseta estado visual da lanterna após troca
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // --------------------------------------------------
+  // chamada ao backend
   async function handleCheckin(token: string) {
     try {
       const res = await fetch(`/api/checkin?t=${encodeURIComponent(token)}`);
       const json = await res.json();
 
       if (!res.ok || !json?.ok) {
-        // mensagens específicas
         if (json?.message?.toLowerCase().includes("revog")) {
           setStatus("revoked");
           setLastMessage("Convite revogado.");
@@ -155,7 +237,6 @@ export default function ScannerPage() {
         beep();
       }
 
-      // Após 2.5s, volta pro estado de leitura
       setTimeout(() => {
         setStatus("scanning");
         setLastMessage("");
@@ -184,25 +265,53 @@ export default function ScannerPage() {
         Aponte a câmera para o QR do convidado. O sistema valida e marca o check-in automaticamente.
       </p>
 
+      {/* Seletor de câmera */}
+      <div className="w-full max-w-md flex items-center gap-3">
+        <select
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+          className="flex-1 rounded-lg border px-3 py-2 bg-white"
+        >
+          {devices.length === 0 && (
+            <option value="">
+              {hasPermission === false
+                ? "Permita acesso à câmera nas permissões do navegador"
+                : "Procurando câmeras..."}
+            </option>
+          )}
+          {devices.map((d, i) => (
+            <option key={d.deviceId || i} value={d.deviceId}>
+              {d.label || (i === 0 ? "Câmera 1" : `Câmera ${i + 1}`)}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          onClick={async () => {
+            // re-lista e tenta manter a seleção anterior se ainda existir
+            const prev = selectedId;
+            await requestPermissionAndList();
+            // se a anterior existir ainda, mantém
+            const stillThere = devices.find((d) => d.deviceId === prev);
+            setSelectedId(stillThere ? prev : (d => d?.deviceId ?? "")(devices[0]));
+          }}
+          className="px-4 py-2 rounded-lg bg-gray-800 text-white font-medium shadow"
+        >
+          Atualizar
+        </button>
+      </div>
+
       {/* Área do vídeo */}
       <div className="w-full max-w-md rounded-xl overflow-hidden border bg-black aspect-[3/4] relative">
-        <video
-          ref={videoRef}
-          className="w-full h-full object-cover"
-          muted
-          playsInline
-          autoPlay
-        />
-        {/* Moldura de mira */}
+        <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="w-56 h-56 border-2 border-white/80 rounded-lg"></div>
+          <div className="w-56 h-56 border-2 border-white/80 rounded-lg" />
         </div>
       </div>
 
       {/* Status */}
-      <div
-        className={`w-full max-w-md rounded-lg border p-3 text-center ${statusStyles[status]}`}
-      >
+      <div className={`w-full max-w-md rounded-lg border p-3 text-center ${statusStyles[status]}`}>
         {status === "scanning" && "Lendo… aponte para o QR"}
         {status === "success" && (lastMessage || "Check-in confirmado!")}
         {status === "already" && (lastMessage || "Convidado já tinha check-in.")}
@@ -248,7 +357,6 @@ export default function ScannerPage() {
           type="button"
           disabled={busy || !manualToken.trim()}
           onClick={async () => {
-            // aceita URL com ?t=
             let t = manualToken.trim();
             try {
               const u = new URL(t);
@@ -269,8 +377,9 @@ export default function ScannerPage() {
         </button>
       </div>
 
-      <p className="text-xs text-gray-500 mt-4">
-        Dica: adicione esta página à tela inicial para acesso rápido na portaria.
+      <p className="text-xs text-gray-500 mt-4 text-center">
+        Dica: toque no cadeado da barra de endereço &rarr; Permissões &rarr; Câmera = Permitir.
+        Se a câmera não abrir, feche apps que a estejam usando (WhatsApp/Instagram) e recarregue.
       </p>
     </main>
   );
