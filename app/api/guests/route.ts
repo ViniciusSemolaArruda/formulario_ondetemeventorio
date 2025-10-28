@@ -7,7 +7,6 @@ import { prisma } from "@/app/lib/prisma";
 import { z } from "zod";
 import { DocumentType, Prisma } from "@prisma/client";
 import crypto from "crypto";
-import QRCode from "qrcode";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -30,7 +29,6 @@ const payloadSchema = z.object({
   documentNumber: z.string().optional(),
   company: z.string().optional(),
   jobTitle: z.string().optional(),
-  // ✅ Em vez de z.enum(...), usamos string + transform + refine
   state: z
     .string()
     .transform((s) => s.trim().toUpperCase())
@@ -49,12 +47,12 @@ async function sendInviteEmail({
   to,
   name,
   passUrl,
-  qrBase64Png,
+  qrUrl,
 }: {
   to: string;
   name: string;
   passUrl: string;
-  qrBase64Png: string;
+  qrUrl: string;
 }) {
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto">
@@ -63,7 +61,7 @@ async function sendInviteEmail({
     <p><strong>Dica:</strong> Salve este e-mail ou baixe a imagem.</p>
     <p style="text-align:center">
       <img alt="Seu QR Code" style="width:260px;height:auto"
-           src="data:image/png;base64,${qrBase64Png}" />
+           src="${qrUrl}" />
     </p>
     <p>Se preferir, abra seu passe aqui:<br/>
       <a href="${passUrl}" target="_blank" rel="noopener noreferrer">${passUrl}</a>
@@ -89,16 +87,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Normalização e validação
     const data = payloadSchema.parse({
       ...raw,
       email: String(raw.email ?? "").trim().toLowerCase(),
       phone: onlyDigits(raw.phone ?? ""),
       documentNumber: raw.documentNumber ? onlyDigits(raw.documentNumber) : undefined,
-      // state e city já são tratados pelo schema (transform/refine)
     });
 
-    // Idempotência por e-mail/telefone/documento
     const orClauses: Prisma.GuestInviteWhereInput[] = [
       { email: data.email },
       { phone: data.phone },
@@ -114,18 +109,13 @@ export async function POST(req: Request) {
       let emailSent = false;
       try {
         if (SEND_EMAILS === "true") {
-          const payloadUrl = `${APP_BASE_URL}/api/checkin?t=${existing.checkInToken}`;
           const passUrl = `${APP_BASE_URL}/guests/${existing.id}/pass`;
-          const png = await QRCode.toBuffer(payloadUrl, {
-            width: 600,
-            margin: 1,
-            errorCorrectionLevel: "M",
-          });
+          const qrUrl = `${APP_BASE_URL}/api/guests/${existing.id}/qr`;
           await sendInviteEmail({
             to: existing.email,
             name: existing.fullName,
             passUrl,
-            qrBase64Png: png.toString("base64"),
+            qrUrl,
           });
           emailSent = true;
         }
@@ -144,7 +134,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // Criação
     const created = await prisma.guestInvite.create({
       data: {
         fullName: data.fullName,
@@ -161,26 +150,18 @@ export async function POST(req: Request) {
       select: { id: true, fullName: true, email: true, checkInToken: true },
     });
 
-    // Envio de e-mail com QR (best effort)
     let emailSent = false;
     try {
       if (SEND_EMAILS === "true") {
-        const payloadUrl = `${APP_BASE_URL}/api/checkin?t=${created.checkInToken}`;
         const passUrl = `${APP_BASE_URL}/guests/${created.id}/pass`;
-        const png = await QRCode.toBuffer(payloadUrl, {
-          width: 600,
-          margin: 1,
-          errorCorrectionLevel: "M",
-        });
+        const qrUrl = `${APP_BASE_URL}/api/guests/${created.id}/qr`;
         await sendInviteEmail({
           to: created.email,
           name: created.fullName,
           passUrl,
-          qrBase64Png: png.toString("base64"),
+          qrUrl,
         });
         emailSent = true;
-      } else {
-        console.warn("EMAILS DESATIVADOS (SEND_EMAILS!=true)");
       }
     } catch (e) {
       console.error("Falha ao enviar e-mail:", e);
