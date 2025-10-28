@@ -13,12 +13,19 @@ function isEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
+const UF_LIST = [
+  "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
+  "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
+] as const;
+
 type FormState = {
   fullName: string;
   email: string;
   phone: string;
   company: string;
   jobTitle: string;
+  state: string;
+  city: string;
   acceptTerms: boolean;
 };
 
@@ -28,6 +35,8 @@ const initialState: FormState = {
   phone: "",
   company: "",
   jobTitle: "",
+  state: "",
+  city: "",
   acceptTerms: false,
 };
 
@@ -49,7 +58,7 @@ export default function Page() {
     if (!isEmail(values.email)) {
       e.email = "E-mail inválido";
     }
-    if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+    if (phoneDigits.length < 10 || phoneDigits.length > 14) {
       e.phone = "Informe um telefone válido";
     }
     if (!values.company.trim()) {
@@ -57,6 +66,12 @@ export default function Page() {
     }
     if (!values.jobTitle.trim()) {
       e.jobTitle = "Informe o cargo";
+    }
+    if (!values.state || !UF_LIST.includes(values.state as any)) {
+      e.state = "Selecione o estado (UF)";
+    }
+    if (!values.city.trim() || values.city.length < 2) {
+      e.city = "Informe o município";
     }
     if (!values.acceptTerms) {
       e.acceptTerms =
@@ -79,9 +94,11 @@ export default function Page() {
         fullName: values.fullName.trim(),
         email: values.email.trim().toLowerCase(),
         phone: phoneDigits,
-        company: values.company,
-        jobTitle: values.jobTitle,
-      } as const;
+        company: values.company.trim(),
+        jobTitle: values.jobTitle.trim(),
+        state: values.state,
+        city: values.city.trim(),
+      };
 
       const res = await fetch("/api/guests", {
         method: "POST",
@@ -99,7 +116,12 @@ export default function Page() {
           );
         } else {
           setSuccess(true);
-          setServerMsg(json?.message || "Inscrição enviada com sucesso! ✔");
+          setServerMsg(
+            json?.message ||
+              (json?.emailSent
+                ? "Inscrição enviada! QR enviado por e-mail ✔"
+                : "Inscrição enviada, mas não consegui enviar o e-mail agora.")
+          );
           setValues(initialState);
           setErrors({});
         }
@@ -114,12 +136,7 @@ export default function Page() {
   }
 
   return (
-    <main
-      className="
-        relative min-h-screen flex items-center justify-center
-        bg-white md:bg-[#FF7601] md:p-10
-      "
-    >
+    <main className="relative min-h-screen flex items-center justify-center bg-white md:bg-[#FF7601] md:p-10">
       {/* Overlay de sucesso */}
       {success && (
         <div className="fixed inset-0 z-30 flex items-center justify-center p-6">
@@ -130,8 +147,7 @@ export default function Page() {
           <div className="relative z-10 max-w-md w-full rounded-2xl border-2 bg-white text-green-700 shadow-2xl p-6 text-center">
             <h2 className="text-xl font-bold">Inscrição enviada com sucesso! 🎉</h2>
             <p className="mt-2 text-green-800">
-              Obrigado por se inscrever. Em breve entraremos em contato com as
-              próximas etapas.
+              Obrigado por se inscrever. Em breve entraremos em contato com as próximas etapas.
             </p>
             <button
               onClick={() => setSuccess(false)}
@@ -145,43 +161,33 @@ export default function Page() {
       )}
 
       <div
-        className="
-          relative z-10 w-full max-w-2xl
-          min-h-screen md:min-h-0
-          flex flex-col items-center
-          border-2 shadow-2xl bg-white md:rounded-xl
-        "
+        className="relative z-10 w-full max-w-2xl min-h-screen md:min-h-0 flex flex-col items-center border-2 shadow-2xl bg-white md:rounded-xl"
         style={{ borderColor: "#FF7601" }}
       >
-        {/* Título */}
-        <div className="w-full text-center py-4">
-          <h1 className="text-2xl md:text-3xl font-bold text-black">
+        {/* TOP HEADER COM LOGO (sem marca d'água) */}
+        <div className="w-full flex flex-col items-center text-center px-6 pt-0 pb-4">
+          <img
+            src={LOGO_URL}
+            alt="Onde Tem Evento RIO - Logo"
+            className="h-44 md:h-46 w-auto drop-shadow-sm"
+          />
+          <h1 className="mt-3 text-2xl md:text-3xl font-bold text-black">
             Cadastro de Convidado(a)
           </h1>
           <p className="mt-1 text-gray-600 text-sm">
             Você é o nosso convidado(a) especial, preencha seus dados abaixo.
           </p>
+          <div className="mt-4 h-px w-full max-w-sm bg-gradient-to-r from-transparent via-[#FF7601] to-transparent" />
         </div>
 
-        {/* Marca d’água */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div
-            className="w-[90%] h-[90%] bg-center bg-no-repeat bg-contain opacity-10"
-            style={{ backgroundImage: `url(${LOGO_URL})` }}
-            aria-hidden
-          />
-        </div>
-
+        {/* FORM */}
         <form
           onSubmit={onSubmit}
           className="relative z-10 p-5 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 w-full text-black"
         >
           {/* Nome completo */}
           <div className="md:col-span-2">
-            <label
-              htmlFor="fullName"
-              className="block text-sm font-medium text-black"
-            >
+            <label htmlFor="fullName" className="block text-sm font-medium text-black">
               Nome completo <span className="text-red-500">*</span>
             </label>
             <input
@@ -189,22 +195,15 @@ export default function Page() {
               required
               type="text"
               value={values.fullName}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, fullName: e.target.value }))
-              }
+              onChange={(e) => setValues((s) => ({ ...s, fullName: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             />
-            {errors.fullName && (
-              <p className="mt-1 text-sm text-red-500">{errors.fullName}</p>
-            )}
+            {errors.fullName && <p className="mt-1 text-sm text-red-500">{errors.fullName}</p>}
           </div>
 
           {/* Email */}
           <div className="md:col-span-2">
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-black"
-            >
+            <label htmlFor="email" className="block text-sm font-medium text-black">
               E-mail <span className="text-red-500">*</span>
             </label>
             <input
@@ -212,22 +211,15 @@ export default function Page() {
               required
               type="email"
               value={values.email}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, email: e.target.value }))
-              }
+              onChange={(e) => setValues((s) => ({ ...s, email: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             />
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-500">{errors.email}</p>
-            )}
+            {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
           </div>
 
-          {/* Telefone — ocupa a linha inteira no desktop para forçar a próxima linha com Empresa + Cargo */}
+          {/* Telefone */}
           <div className="md:col-span-2">
-            <label
-              htmlFor="phone"
-              className="block text-sm font-medium text-black"
-            >
+            <label htmlFor="phone" className="block text-sm font-medium text-black">
               Telefone / WhatsApp <span className="text-red-500">*</span>
             </label>
             <input
@@ -236,22 +228,15 @@ export default function Page() {
               type="tel"
               inputMode="numeric"
               value={values.phone}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, phone: e.target.value }))
-              }
+              onChange={(e) => setValues((s) => ({ ...s, phone: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             />
-            {errors.phone && (
-              <p className="mt-1 text-sm text-red-500">{errors.phone}</p>
-            )}
+            {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone}</p>}
           </div>
 
-          {/* Empresa — col 1 no desktop */}
+          {/* Empresa */}
           <div>
-            <label
-              htmlFor="company"
-              className="block text-sm font-medium text-black"
-            >
+            <label htmlFor="company" className="block text-sm font-medium text-black">
               Empresa / Instituição <span className="text-red-500">*</span>
             </label>
             <input
@@ -259,22 +244,15 @@ export default function Page() {
               required
               type="text"
               value={values.company}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, company: e.target.value }))
-              }
+              onChange={(e) => setValues((s) => ({ ...s, company: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             />
-            {errors.company && (
-              <p className="mt-1 text-sm text-red-500">{errors.company}</p>
-            )}
+            {errors.company && <p className="mt-1 text-sm text-red-500">{errors.company}</p>}
           </div>
 
-          {/* Cargo — col 2 no desktop */}
+          {/* Cargo */}
           <div>
-            <label
-              htmlFor="jobTitle"
-              className="block text-sm font-medium text-black"
-            >
+            <label htmlFor="jobTitle" className="block text-sm font-medium text-black">
               Cargo <span className="text-red-500">*</span>
             </label>
             <input
@@ -282,53 +260,71 @@ export default function Page() {
               required
               type="text"
               value={values.jobTitle}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, jobTitle: e.target.value }))
-              }
+              onChange={(e) => setValues((s) => ({ ...s, jobTitle: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             />
-            {errors.jobTitle && (
-              <p className="mt-1 text-sm text-red-500">{errors.jobTitle}</p>
-            )}
+            {errors.jobTitle && <p className="mt-1 text-sm text-red-500">{errors.jobTitle}</p>}
           </div>
 
-          {/* Aceite dos termos */}
+          {/* Estado (UF) */}
+          <div>
+            <label htmlFor="state" className="block text-sm font-medium text-black">
+              Estado (UF) <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="state"
+              required
+              value={values.state}
+              onChange={(e) => setValues((s) => ({ ...s, state: e.target.value }))}
+              className="mt-1 w-full rounded-lg border px-3 py-2 text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
+            >
+              <option value="">Selecione</option>
+              {UF_LIST.map((uf) => (
+                <option key={uf} value={uf}>{uf}</option>
+              ))}
+            </select>
+            {errors.state && <p className="mt-1 text-sm text-red-500">{errors.state}</p>}
+          </div>
+
+          {/* Município */}
+          <div>
+            <label htmlFor="city" className="block text-sm font-medium text-black">
+              Município <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="city"
+              required
+              type="text"
+              value={values.city}
+              onChange={(e) => setValues((s) => ({ ...s, city: e.target.value }))}
+              className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
+            />
+            {errors.city && <p className="mt-1 text-sm text-red-500">{errors.city}</p>}
+          </div>
+
+          {/* Termos */}
           <div className="md:col-span-2 flex items-center gap-2 mt-2">
             <input
               id="acceptTerms"
               type="checkbox"
               checked={values.acceptTerms}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, acceptTerms: e.target.checked }))
-              }
+              onChange={(e) => setValues((s) => ({ ...s, acceptTerms: e.target.checked }))}
               className="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
             />
             <label htmlFor="acceptTerms" className="text-sm text-black">
               Concordo com os{" "}
-              <a
-                href={TERMS_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline text-orange-500"
-              >
+              <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="underline text-orange-500">
                 Termos de Uso
               </a>{" "}
               e com a{" "}
-              <a
-                href={PRIVACY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline text-orange-500"
-              >
+              <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="underline text-orange-500">
                 Política de Privacidade
               </a>
               <span className="text-red-500">*</span>
             </label>
           </div>
           {errors.acceptTerms && (
-            <p className="md:col-span-2 text-sm text-red-500">
-              {errors.acceptTerms}
-            </p>
+            <p className="md:col-span-2 text-sm text-red-500">{errors.acceptTerms}</p>
           )}
 
           {/* Botão */}

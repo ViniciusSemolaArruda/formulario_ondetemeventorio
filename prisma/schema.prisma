@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,21 +12,37 @@ enum DocumentType {
   RG
 }
 
+enum InviteStatus {
+  PENDING
+  CHECKED_IN
+  REVOKED
+}
+
 model GuestInvite {
   id             String        @id @default(uuid())
   fullName       String        @db.VarChar(120)
-  email          String        @db.Citext        // case-insensitive
-  phone          String        @db.VarChar(14)   // ex.: 21987654321 (até 14)
+  email          String        @db.Citext
+  phone          String        @db.VarChar(14)
   documentType   DocumentType?
-  documentNumber String?       @db.VarChar(14)   // CPF/RG sem máscara
+  documentNumber String?       @db.VarChar(14)
   company        String?       @db.VarChar(120)
   jobTitle       String?       @db.VarChar(120)
 
+  // 1ª etapa: opcional e sem unique
+  checkInToken   String?       @db.VarChar(64)
+  status         InviteStatus  @default(PENDING)
+  checkInAt      DateTime?
+
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  state          String?       @db.VarChar(2)    // UF (ex: RJ)
+  city           String?       @db.VarChar(120)  // Município
 
   @@unique([email, phone])
   @@index([email])
   @@index([phone])
   @@index([createdAt])
+  @@index([status])
+  @@index([state, city])
 }
