@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import QRCode from "qrcode";
 
-const APP_BASE_URL = process.env.APP_BASE_URL ?? "http://localhost:3000";
+const APP_BASE_URL = process.env.APP_BASE_URL ?? "https://convidado-ondetemevento.com.br/";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const guest = await prisma.guestInvite.findUnique({
