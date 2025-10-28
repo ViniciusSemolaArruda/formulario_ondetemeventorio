@@ -21,6 +21,7 @@ const UF_LIST = [
 type FormState = {
   fullName: string;
   email: string;
+  confirmEmail: string;
   phone: string;
   company: string;
   jobTitle: string;
@@ -32,6 +33,7 @@ type FormState = {
 const initialState: FormState = {
   fullName: "",
   email: "",
+  confirmEmail: "",
   phone: "",
   company: "",
   jobTitle: "",
@@ -48,6 +50,9 @@ export default function Page() {
   const [success, setSuccess] = useState(false);
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
 
+  // Truque anti-autofill pro campo "Confirmar e-mail"
+  const [confirmReadonly, setConfirmReadonly] = useState(true);
+
   const phoneDigits = useMemo(() => onlyDigits(values.phone), [values.phone]);
 
   function validate(): boolean {
@@ -58,9 +63,20 @@ export default function Page() {
     if (!isEmail(values.email)) {
       e.email = "E-mail inválido";
     }
-    if (phoneDigits.length < 10 || phoneDigits.length > 14) {
-      e.phone = "Informe um telefone válido";
+    // confirma e-mail
+    const emailNorm = values.email.trim().toLowerCase();
+    const confirmNorm = values.confirmEmail.trim().toLowerCase();
+    if (!confirmNorm) {
+      e.confirmEmail = "Confirme o seu e-mail (digite novamente)";
+    } else if (emailNorm !== confirmNorm) {
+      e.confirmEmail = "Os e-mails não coincidem. Digite novamente sem autocompletar.";
     }
+
+    // Telefone com DDD
+    if (phoneDigits.length < 10 || phoneDigits.length > 14) {
+      e.phone = "Informe um telefone válido com DDD (ex: 21999999999)";
+    }
+
     if (!values.company.trim()) {
       e.company = "Informe a empresa";
     }
@@ -124,6 +140,7 @@ export default function Page() {
           );
           setValues(initialState);
           setErrors({});
+          setConfirmReadonly(true); // reset truque do confirm
         }
       } else {
         setServerMsg(json?.message || "Não foi possível enviar.");
@@ -147,7 +164,9 @@ export default function Page() {
           <div className="relative z-10 max-w-md w-full rounded-2xl border-2 bg-white text-green-700 shadow-2xl p-6 text-center">
             <h2 className="text-xl font-bold">Inscrição enviada com sucesso! 🎉</h2>
             <p className="mt-2 text-green-800">
-              Obrigado por se inscrever! Em breve entraremos em contato com as próximas etapas.
+              Obrigado por se inscrever! Dentro de alguns minutos você receberá o QR Code
+              no seu e-mail. Esse QR será obrigatório para apresentar no dia do evento
+              no momento do check-in.
             </p>
             <button
               onClick={() => setSuccess(false)}
@@ -164,7 +183,7 @@ export default function Page() {
         className="relative z-10 w-full max-w-2xl min-h-screen md:min-h-0 flex flex-col items-center border-2 shadow-2xl bg-white md:rounded-xl"
         style={{ borderColor: "#FF7601" }}
       >
-        {/* TOP HEADER COM LOGO (sem marca d'água) */}
+        {/* TOP HEADER COM LOGO */}
         <div className="w-full flex flex-col items-center text-center px-6 pt-0 pb-4">
           <img
             src={LOGO_URL}
@@ -183,6 +202,7 @@ export default function Page() {
         {/* FORM */}
         <form
           onSubmit={onSubmit}
+          autoComplete="off"
           className="relative z-10 p-5 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 w-full text-black"
         >
           {/* Nome completo */}
@@ -192,8 +212,13 @@ export default function Page() {
             </label>
             <input
               id="fullName"
+              name="fullName"
               required
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="Ex.: Maria da Silva"
               value={values.fullName}
               onChange={(e) => setValues((s) => ({ ...s, fullName: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
@@ -208,13 +233,57 @@ export default function Page() {
             </label>
             <input
               id="email"
+              name="user_email" // nome não-padrão ajuda a evitar autofill
               required
               type="email"
+              inputMode="email"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="Ex.: maria.silva@email.com"
               value={values.email}
               onChange={(e) => setValues((s) => ({ ...s, email: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             />
             {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
+          </div>
+
+          {/* Confirmar e-mail (anti-autofill forte) */}
+          <div className="md:col-span-2">
+            <label htmlFor="confirmEmail" className="block text-sm font-medium text-black">
+              Confirmar e-mail <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="confirmEmail"
+              name="confirm_email"
+              required
+              type="email"
+              inputMode="email"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="Digite novamente seu e-mail "
+              readOnly={confirmReadonly}
+              onFocus={() => {
+                // solta o readonly ao focar (evita autofill)
+                setConfirmReadonly(false);
+              }}
+              onBlur={(e) => {
+                // se o usuário sair sem digitar nada, volta a readonly
+                if (!e.currentTarget.value) setConfirmReadonly(true);
+              }}
+              onPaste={(e) => e.preventDefault()} // bloqueia colar
+              value={values.confirmEmail}
+              onChange={(e) =>
+                setValues((s) => ({ ...s, confirmEmail: e.target.value }))
+              }
+              className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
+            />
+            {errors.confirmEmail && (
+              <p className="mt-1 text-sm text-red-500">{errors.confirmEmail}</p>
+            )}
           </div>
 
           {/* Telefone */}
@@ -224,9 +293,12 @@ export default function Page() {
             </label>
             <input
               id="phone"
+              name="phone"
               required
               type="tel"
               inputMode="numeric"
+              autoComplete="off"
+              placeholder="Ex.: 21999999999"
               value={values.phone}
               onChange={(e) => setValues((s) => ({ ...s, phone: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
@@ -234,15 +306,17 @@ export default function Page() {
             {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone}</p>}
           </div>
 
-          {/* Empresa */}
+          {/* Empresa (sem placeholder, como pediu) */}
           <div>
             <label htmlFor="company" className="block text-sm font-medium text-black">
               Empresa / Instituição <span className="text-red-500">*</span>
             </label>
             <input
               id="company"
+              name="company"
               required
               type="text"
+              autoComplete="off"
               value={values.company}
               onChange={(e) => setValues((s) => ({ ...s, company: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
@@ -250,15 +324,17 @@ export default function Page() {
             {errors.company && <p className="mt-1 text-sm text-red-500">{errors.company}</p>}
           </div>
 
-          {/* Cargo */}
+          {/* Cargo (sem placeholder, como pediu) */}
           <div>
             <label htmlFor="jobTitle" className="block text-sm font-medium text-black">
               Cargo <span className="text-red-500">*</span>
             </label>
             <input
               id="jobTitle"
+              name="jobTitle"
               required
               type="text"
+              autoComplete="off"
               value={values.jobTitle}
               onChange={(e) => setValues((s) => ({ ...s, jobTitle: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
@@ -273,12 +349,13 @@ export default function Page() {
             </label>
             <select
               id="state"
+              name="state"
               required
               value={values.state}
               onChange={(e) => setValues((s) => ({ ...s, state: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
             >
-              <option value="">Selecione</option>
+              <option value="">Selecione (ex.: RJ)</option>
               {UF_LIST.map((uf) => (
                 <option key={uf} value={uf}>{uf}</option>
               ))}
@@ -293,8 +370,11 @@ export default function Page() {
             </label>
             <input
               id="city"
+              name="city"
               required
               type="text"
+              autoComplete="off"
+              placeholder="Ex.: Rio de Janeiro"
               value={values.city}
               onChange={(e) => setValues((s) => ({ ...s, city: e.target.value }))}
               className="mt-1 w-full rounded-lg border px-3 py-2 text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7601]/40"
