@@ -56,31 +56,39 @@ async function sendInviteEmail({
   passUrl: string;
   qrBase64Png: string;
 }) {
+  const from = process.env.MAIL_FROM!;
+  const subject = "Seu convite – Check-in com QR Code";
+
+  console.log(">>> ENVIANDO EMAIL <<<");
+  console.log("From:", from);
+  console.log("To:", to);
+
   const html = `
-  <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto">
-    <h2>Olá, ${name}!</h2>
-    <p>Seu cadastro foi confirmado. Apresente este QR Code na entrada para realizar o check-in.</p>
-    <p><strong>Dica:</strong> Salve este e-mail ou baixe a imagem.</p>
-    <p style="text-align:center">
-      <img alt="Seu QR Code" style="width:260px;height:auto"
-           src="data:image/png;base64,${qrBase64Png}" />
-    </p>
-    <p>Se preferir, abra seu passe aqui:<br/>
-      <a href="${passUrl}" target="_blank" rel="noopener noreferrer">${passUrl}</a>
-    </p>
-    <hr/>
-    <p style="font-size:12px;color:#666">Se você não solicitou este convite, pode ignorar.</p>
-  </div>`.trim();
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto">
+      <h2>Olá, ${name}!</h2>
+      <p>Seu cadastro foi confirmado. Apresente este QR Code na entrada para realizar o check-in.</p>
+      <p><strong>Dica:</strong> Salve este e-mail ou baixe a imagem.</p>
+      <p style="text-align:center">
+        <img alt="Seu QR Code" style="width:260px;height:auto"
+             src="data:image/png;base64,${qrBase64Png}" />
+      </p>
+      <p>Se preferir, abra seu passe aqui:<br/>
+        <a href="${passUrl}" target="_blank">${passUrl}</a>
+      </p>
+      <hr/>
+      <p style="font-size:12px;color:#666">Se você não solicitou este convite, pode ignorar.</p>
+    </div>`.trim();
 
-  const { error } = await resend.emails.send({
-    from: MAIL_FROM,
-    to,
-    subject: "Seu convite – Check-in com QR Code",
-    html,
-  });
+  const { error } = await resend.emails.send({ from, to, subject, html });
 
-  if (error) throw error;
+  if (error) {
+    console.error("Erro ao enviar e-mail:", error);
+    throw error;
+  }
+
+  console.log(">>> EMAIL ENVIADO COM SUCESSO <<<");
 }
+
 
 export async function POST(req: Request) {
   const raw = await req.json().catch(() => null);
