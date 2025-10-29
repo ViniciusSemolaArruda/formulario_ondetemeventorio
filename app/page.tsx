@@ -198,6 +198,11 @@ export default function Page() {
           </p>
           <div className="mt-4 h-px w-full max-w-sm bg-gradient-to-r from-transparent via-[#FF7601] to-transparent" />
         </div>
+        <div className="md:col-span-2 mt-2 text-center bg-red-50 border border-red-300 rounded-lg p-2">
+  <p className="text-sm font-semibold text-red-700">
+    ⚠ O ingresso é pessoal e intransferível.
+  </p>
+</div>
 
         {/* FORM */}
         <form
