@@ -16,9 +16,25 @@ export const metadata: Metadata = {
   title: "Onde Tem Evento Rio? - Convites",
   description: "Você está convidado!",
   icons: {
-    icon: "/favicon-32x32.png", // 👈 aponta para o favicon na pasta public
+    icon: "/favicon-32x32.png",
+  },
+  openGraph: {
+    title: "Onde Tem Evento Rio? - Convites",
+    description: "Você está convidado!",
+    url: "https://convidado-ondetemevento.com.br/",
+    siteName: "Onde Tem Evento Rio?",
+    images: [
+      {
+        url: "https://convidado-ondetemevento.com.br/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Convite - Onde Tem Evento Rio?",
+      },
+    ],
+    type: "website",
   },
 };
+
 
 export default function RootLayout({
   children,
