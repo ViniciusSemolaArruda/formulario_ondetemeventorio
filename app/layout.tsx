@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Aonde Tem Evento - Convites",
+  title: "Onde Tem Evento Rio? - Convites",
   description: "Você está convidado!",
   icons: {
     icon: "/favicon-32x32.png", // 👈 aponta para o favicon na pasta public
